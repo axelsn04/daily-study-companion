@@ -1,6 +1,7 @@
 # src/finance.py
 from __future__ import annotations
 
+import io
 import os
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
@@ -62,7 +63,7 @@ def _stooq_candidates(tk: str) -> List[str]:
 def _fetch_stooq_pdr(tk: str, start: datetime) -> Optional[pd.DataFrame]:
     """Intenta Stooq vía pandas-datareader."""
     try:
-        from pandas_datareader import data as pdr
+        from pandas_datareader import data as pdr  # type: ignore
     except Exception:
         return None
 
@@ -87,26 +88,25 @@ def _fetch_stooq_csv(tk: str, start: datetime, end: Optional[datetime] = None) -
         end = datetime.utcnow()
 
     for sym in _stooq_candidates(tk):
+        s = sym.lower()  # en la URL va en minúsculas, p.ej., spy.us
+        d1 = start.strftime("%Y%m%d")
+        d2 = end.strftime("%Y%m%d")
+        url = f"https://stooq.com/q/d/l/?s={s}&i=d&d1={d1}&d2={d2}"
+        text: Optional[str] = None
         try:
-            s = sym.lower()  # en la URL va en minúsculas, p.ej., spy.us
-            d1 = start.strftime("%Y%m%d")
-            d2 = end.strftime("%Y%m%d")
-            url = f"https://stooq.com/q/d/l/?s={s}&i=d&d1={d1}&d2={d2}"
             r = requests.get(url, timeout=20)
             r.raise_for_status()
-            # Si Stooq no tiene datos, puede devolver "404 Not Found" o CSV vacío
-            if not r.text or r.text.strip().startswith("<!DOCTYPE") or "404" in r.text[:20]:
-                continue
-            df = pd.read_csv(
-                pd.compat.StringIO(r.text) if hasattr(pd, "compat") else None  # pyright quiet
-            )
+            text = r.text or ""
         except Exception:
-            # fallback a leer con io.StringIO para compat futura
-            try:
-                from io import StringIO
-                df = pd.read_csv(StringIO(r.text))
-            except Exception:
-                continue
+            text = None
+
+        if not text or text.strip().startswith("<!DOCTYPE") or text.strip().startswith("404"):
+            continue
+
+        try:
+            df = pd.read_csv(io.StringIO(text))
+        except Exception:
+            continue
 
         if isinstance(df, pd.DataFrame) and not df.empty:
             # Esperamos columnas: Date, Open, High, Low, Close, Volume
@@ -169,9 +169,9 @@ def plot_prices(prices: Dict[str, pd.DataFrame]) -> List[str]:
     Genera PNG por ticker con la serie de cierre seleccionada.
     Devuelve lista de rutas a imágenes (absolutas).
     """
-    import matplotlib
+    import matplotlib  # type: ignore
     matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
+    import matplotlib.pyplot as plt  # type: ignore
     from pathlib import Path
 
     outdir = Path(CHARTS_DIR)
@@ -188,17 +188,15 @@ def plot_prices(prices: Dict[str, pd.DataFrame]) -> List[str]:
         if s.empty:
             continue
 
-        # normaliza índice (evita problemas de tz/obj)
-        idx = pd.to_datetime(s.index, errors="coerce")
-        try:
-            idx = idx.tz_localize(None)
-        except Exception:
-            pass  # ya es naive
+        # normaliza índice y valores (silencia ArrayLike warnings)
+        xs = pd.to_datetime(s.index, errors="coerce").to_pydatetime()
+        ys = s.astype(float).values
+        xs_list = list(xs)                         
+        ys_list = [float(v) for v in ys.tolist()] 
 
-        # plot
         fig = plt.figure(figsize=(8, 3))
-        plt.plot(idx, s.values, linewidth=1.6)
-        plt.title(f"{t} — {len(s)} pts ({idx[0].date()} → {idx[-1].date()})")
+        plt.plot(xs_list, ys_list, linewidth=1.6)
+        plt.title(f"{t} — {len(s)} pts ({xs[0].date()} → {xs[-1].date()})")
         plt.xlabel("")
         plt.ylabel("Close")
         plt.tight_layout()
@@ -210,4 +208,3 @@ def plot_prices(prices: Dict[str, pd.DataFrame]) -> List[str]:
         imgs.append(str(out))  # absoluta
 
     return imgs
-
