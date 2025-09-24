@@ -30,3 +30,5 @@ ruff==0.6.9
 ics==0.7.2
 icalendar==5.0.13
 pandas-datareader==0.10.0
+pyyaml==6.0.2
+pyyaml==6.0.2

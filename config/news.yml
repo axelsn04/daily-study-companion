@@ -1,0 +1,48 @@
+news:
+  limit: 6
+  max_age_hours: 48
+  lang: en-US
+  region: US
+
+  # Mapeo de TOPIC -> lista de patrones (se hace match insensible a may/min)
+  topics:
+    AI:
+      - "\bai\b"
+      - "artificial intelligence"
+      - "gen(ai|erative ai)"
+      - "\bllm(s)?\b"
+      - "gpt(-\\d+)?"
+      - "anthropic|openai|deepmind"
+    Machine Learning:
+      - "machine[- ]learning"
+      - "\bml\b"
+      - "deep[- ]learning"
+      - "neural (net|network|networks)"
+      - "transformer(s)?"
+      - "\b(model|models|training|fine[- ]tune|fine[- ]tuning)\b"
+      - "\b(model|models|modeling|training|pretrain(ed)?|fine[- ]tune|fine[- ]tuning|weights|dataset|benchmark|inference)\b"
+      - "supervised|unsupervised|reinforcement learning|rlhf|rl"
+    Fintech:
+      - "fintech"
+      - "payment(s)?|paytech"
+      - "bank(ing)?|neobank|digital bank"
+      - "lending|credit|remittance(s)?"
+      - "stripe|visa|mastercard|paypal|square|block( inc)?"
+      - "\bsaas\b"
+
+  domain_whitelist:
+    - wsj.com
+    - feeds.a.dj.com
+    - bloomberg.com
+    - feeds.bloomberg.com
+    - ft.com
+    - techcrunch.com
+    - theverge.com
+    - semianalysis.com
+    - reuters.com
+    - nytimes.com
+    - rss.nytimes.com
+    - forbes.com
+    - finance.yahoo.com
+
+  domain_blacklist: []
