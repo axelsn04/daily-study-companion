@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.pyc
+
+# Virtual env
+.venv/
+
+# Envs / credenciales
+.env
+.env.*
+credentials.json
+token.json
+
+# Datos locales
+data/
+logs/
+
+# Notebooks cache
+.ipynb_checkpoints/

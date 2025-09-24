@@ -1,0 +1,29 @@
+# Core
+python-dotenv==1.0.1
+requests==2.32.3
+pydantic==2.9.2
+
+# News & parsing
+feedparser==6.0.11
+
+# Finance & charts
+yfinance==0.2.43
+pandas==2.2.2
+matplotlib==3.9.2
+
+# Google APIs (Calendar)
+google-api-python-client==2.149.0
+google-auth==2.35.0
+google-auth-httplib2==0.2.0
+google-auth-oauthlib==1.2.1
+
+# Scheduling (si deseas correr como script persistente)
+APScheduler==3.10.4
+
+# Email (opcional si eliges envío por correo)
+yagmail==0.15.293
+
+# Dev (opcional, pero recomendado)
+black==24.8.0
+isort==5.13.2
+ruff==0.6.9
