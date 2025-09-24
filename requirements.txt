@@ -27,3 +27,6 @@ yagmail==0.15.293
 black==24.8.0
 isort==5.13.2
 ruff==0.6.9
+ics==0.7.2
+icalendar==5.0.13
+pandas-datareader==0.10.0
