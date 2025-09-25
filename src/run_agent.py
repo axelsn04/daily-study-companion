@@ -1,58 +1,71 @@
 # src/run_agent.py
 from __future__ import annotations
+
 import os
 import argparse
-from datetime import datetime
-from typing import Dict, Any, List, Tuple
+from datetime import datetime, timezone
+from typing import Dict, Any, List, Tuple, Optional
 
 from dotenv import load_dotenv
 load_dotenv()
 
-# Dependencias del proyecto
 from news import fetch_news
 from finance import fetch_prices, basic_stats
 from calendar_sync import get_events_today_from_ics, find_free_slots_from_events
 from email_send import send_email
 
-# -------- Config --------
-REPORT_PUBLIC_URL = (os.getenv("REPORT_PUBLIC_URL", "") or "").strip()
-REPORT_OUT_PATH   = os.getenv("REPORT_OUT_PATH", "docs/daily_report.html")
-STUDY_ICS_PATH    = os.getenv("STUDY_ICS_PATH", "docs/study_blocks.ics")
-EMAIL_SUBJECT_PREFIX = os.getenv("EMAIL_SUBJECT_PREFIX", "[Daily Companion]")
+# --- Config desde .env ---
+REPORT_PUBLIC_URL      = (os.getenv("REPORT_PUBLIC_URL", "") or "").strip()
+REPORT_OUT_PATH        = os.getenv("REPORT_OUT_PATH", "docs/daily_report.html")
+STUDY_ICS_PATH         = os.getenv("STUDY_ICS_PATH", "docs/study_blocks.ics")
+EMAIL_SUBJECT_PREFIX   = os.getenv("EMAIL_SUBJECT_PREFIX", "[Daily Companion]")
+OLLAMA_MODEL           = (os.getenv("OLLAMA_MODEL", "qwen2.5:3b-instruct") or "qwen2.5:3b-instruct").strip()
+DIGEST_LANG            = (os.getenv("DIGEST_LANG", "es") or "es").lower()  # es / en
 
-# Ollama
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.1:8b").strip()
 
-# -------- Helpers --------
+# ---------- ICS helpers ----------
 def _fmt_dt_ics(dt: datetime) -> str:
-    """UTC -> YYYYMMDDTHHMMSSZ"""
-    from datetime import timezone
+    # A ICS UTC
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
     return dt.astimezone(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
 
-def _write_study_ics(free_slots: List[Tuple[datetime, datetime]], path: str) -> str:
-    """Crea un ICS con los huecos de estudio en UTC."""
+
+def _write_study_ics(free_slots: List[Tuple[datetime, datetime]], path: str) -> Optional[str]:
+    """
+    Escribe un ICS básico con eventos "Study block" para los huecos recibidos.
+    Devuelve la ruta escrita o None si no se escribió.
+    """
+    if not free_slots:
+        return None
+
     import uuid
-    lines = ["BEGIN:VCALENDAR","VERSION:2.0","PRODID:-//DailyStudyCompanion//EN"]
+    from pathlib import Path
+
+    lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//DailyStudyCompanion//EN"]
+    now = datetime.now(timezone.utc)
+
     for s, e in free_slots:
         uid = str(uuid.uuid4())
         lines += [
             "BEGIN:VEVENT",
             f"UID:{uid}",
-            f"DTSTAMP:{_fmt_dt_ics(datetime.now())}",
+            f"DTSTAMP:{_fmt_dt_ics(now)}",
             f"DTSTART:{_fmt_dt_ics(s)}",
             f"DTEND:{_fmt_dt_ics(e)}",
             "SUMMARY:Study block",
             "END:VEVENT",
         ]
-    lines.append("END:VCALENDAR")
 
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
-        f.write("\n".join(lines))
+    lines.append("END:VCALENDAR")
+    Path(os.path.dirname(path) or ".").mkdir(parents=True, exist_ok=True)
+    Path(path).write_text("\n".join(lines), encoding="utf-8")
     return path
 
+
+# ---------- Digest helpers ----------
 def _markets_blurb(stats: Dict[str, Dict[str, float]]) -> str:
-    order = ("NVDA","MSFT","AMZN","TSLA","SPY","^GSPC")
+    order = ("NVDA", "MSFT", "AMZN", "TSLA", "SPY", "^GSPC")
     parts = []
     for tk in order:
         s = stats.get(tk) or (stats.get("SPY") if tk == "^GSPC" else None)
@@ -64,80 +77,96 @@ def _markets_blurb(stats: Dict[str, Dict[str, float]]) -> str:
         parts.append(f"{tk} {pct:+.2f}%")
     return " | ".join(parts)
 
-def _dedup_titles(news: List[Dict[str, Any]], k: int = 8) -> List[str]:
+
+def _collect_headlines(news: List[Dict[str, Any]], k: int = 5) -> List[Tuple[str, str]]:
+    """Devuelve [(source, title)] sin duplicados, hasta k."""
     seen = set()
-    out: List[str] = []
+    out: List[Tuple[str, str]] = []
     for n in news:
-        t = (n.get("title") or "").strip()
-        if not t: 
+        title = (n.get("title") or "").strip()
+        if not title:
             continue
-        key = t.lower()
-        if key in seen: 
+        source = (n.get("source") or "").strip() or "News"
+        key = (source.lower(), title.lower())
+        if key in seen:
             continue
         seen.add(key)
-        out.append(t)
+        out.append((source, title))
         if len(out) >= k:
             break
     return out
 
+
 def _strip_code_fences(text: str) -> str:
     t = text.strip()
+    # elimina ``` o ```html envolventes
     if t.startswith("```"):
-        # quita bloque ```...```
-        if "```" in t[3:]:
-            t = t[3:]
-            t = t.split("```", 1)[0]
+        parts = t.split("```")
+        if len(parts) >= 3:
+            t = parts[1]
     return t.strip()
 
-def _ollama_digest(headlines: List[str], markets_line: str) -> str:
+
+def _ollama_digest(headlines: List[Tuple[str, str]], markets_line: str) -> str:
     """
-    Llama a Ollama (servidor local) para crear un digest más profundo:
-    - 3–5 bullets con insight y vínculos entre noticias
-    - 2 recomendaciones accionables
-    - 1-2 líneas de “Why it matters”
-    Devuelve HTML mínimo.
+    Llama a Ollama chat (local) para sintetizar titulares en HTML muy simple.
     """
     import requests
+
+    # Construcción de prompts
+    hl_block = "\n".join(f"- [{src}] {ttl}" for src, ttl in headlines) if headlines else "(sin titulares)"
+    lang = "Spanish" if DIGEST_LANG.startswith("es") else "English"
     sys_prompt = (
-        "You are a financial research aide. Produce a concise HTML snippet for an email. "
-        "Use <ul><li> for bullets and short <p> lines. No CSS. "
-        "Required sections:\n"
-        "1) <h4>Top takeaways</h4> with 3–5 bullet points that synthesize *insights* across headlines.\n"
-        "2) <h4>Actions</h4> with exactly 2 concrete suggestions (what to read/track/decide).\n"
-        "3) If markets provided, a one-line <p><strong>Markets:</strong> ...</p>.\n"
-        "Keep it crisp; avoid fluff; avoid repeating the same link line."
+        f"You are a concise financial/tech briefing assistant. Respond in {lang}. "
+        "Return ONLY minimal HTML (h4, ul/li, p, strong). No CSS, no code fences.\n\n"
+        "Write EXACTLY one section:\n"
+        "  <h4>Top takeaways</h4>\n"
+        "    • 3–5 bullets synthesized across headlines (not title restatement).\n\n"
+        "Rules:\n"
+        "- Use ONLY the provided headlines; DO NOT invent facts.\n"
+        "- Each bullet ≤ 18 words.\n"
+        "- If markets_line is provided, append a final <p><strong>Markets:</strong> ...</p> exactly.\n"
+        "- Do NOT include any other sections or links."
     )
     user_prompt = (
-        "Headlines:\n- " + "\n- ".join(headlines) + "\n\n"
+        f"Headlines:\n{hl_block}\n\n"
         f"Markets: {markets_line or '(none)'}\n"
     )
+
     payload = {
         "model": OLLAMA_MODEL,
         "messages": [
-            {"role":"system","content": sys_prompt},
-            {"role":"user","content": user_prompt}
+            {"role": "system", "content": sys_prompt},
+            {"role": "user",  "content": user_prompt},
         ],
         "stream": False,
-        "options": {"temperature": 0.2}
+        "options": {"temperature": 0.2, "num_ctx": 4096},
     }
+
+    print(f"[agent] Using Ollama model: {OLLAMA_MODEL}")
     r = requests.post("http://localhost:11434/api/chat", json=payload, timeout=120)
     r.raise_for_status()
     content = r.json()["message"]["content"]
     return _strip_code_fences(content)
 
-def _heuristic_digest(headlines: List[str], markets_line: str) -> str:
-    bullets = "".join(f"<li>{h}</li>" for h in headlines[:5]) or "<li>No headlines today.</li>"
-    body = f"<ul>{bullets}</ul>"
+
+def _heuristic_digest(headlines: List[Tuple[str, str]], markets_line: str) -> str:
+    # Fallback simple y limpio
+    items = "".join(f"<li>{ttl}</li>" for _, ttl in headlines[:5]) or "<li>Sin titulares hoy.</li>"
+    body = f"<h4>Top takeaways</h4><ul>{items}</ul>"
     if markets_line:
         body += f'<p><strong>Markets:</strong> {markets_line}</p>'
     return body
 
-def build_digest_html(news: List[Dict[str, Any]], stats: Dict[str, Dict[str, float]], url_report: str, url_ics: str) -> str:
+
+def build_digest_html(news: List[Dict[str, Any]],
+                      stats: Dict[str, Dict[str, float]],
+                      url_report: str,
+                      url_ics: Optional[str]) -> str:
     today = datetime.now().strftime("%Y-%m-%d")
-    headlines = _dedup_titles(news, k=8)
+    headlines = _collect_headlines(news, k=5)
     markets_line = _markets_blurb(stats)
 
-    # Primero intentamos Ollama; si falla, heurístico.
     try:
         digest_core = _ollama_digest(headlines, markets_line)
     except Exception:
@@ -150,10 +179,11 @@ def build_digest_html(news: List[Dict[str, Any]], stats: Dict[str, Dict[str, flo
         parts.append(f'<p>Suscríbete a tus bloques de estudio: <a href="{url_ics}">{url_ics}</a></p>')
     return "\n".join(parts)
 
-# -------- CLI --------
+
+# ---------- CLI ----------
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--dry-run", action="store_true", help="Imprime el digest en consola (no envía correo).")
+    ap.add_argument("--dry-run", action="store_true", help="No envía email; imprime el digest HTML")
     args = ap.parse_args()
 
     # 1) Datos
@@ -161,31 +191,31 @@ def main():
     prices = fetch_prices()
     stats = basic_stats(prices)
 
-    # 2) Agenda y huecos -> ics
     events = get_events_today_from_ics()
     free_slots = find_free_slots_from_events(events)
-    ics_path = _write_study_ics(free_slots, STUDY_ICS_PATH)
 
-    # 3) Digest HTML
+    # 2) ICS (bloques de estudio) — solo si hay huecos
     public_ics_url = None
-    if REPORT_PUBLIC_URL:
-        # Asumiendo GitHub Pages en /docs:
-        # daily_report.html -> study_blocks.ics en la misma carpeta pública
-        public_ics_url = REPORT_PUBLIC_URL.rsplit("/", 1)[0] + "/study_blocks.ics"
+    ics_path = _write_study_ics(free_slots, STUDY_ICS_PATH) if free_slots else None
+    if ics_path and REPORT_PUBLIC_URL:
+        # ej: https://.../daily_report.html  ->  https://.../study_blocks.ics
+        base = REPORT_PUBLIC_URL.rsplit("/", 1)[0]
+        public_ics_url = f"{base}/study_blocks.ics"
 
-    digest_html = build_digest_html(news_items, stats, REPORT_PUBLIC_URL, public_ics_url or "")
+    # 3) Digest HTML para el email (cuerpo)
+    digest_html = build_digest_html(news_items, stats, REPORT_PUBLIC_URL, public_ics_url)
 
     if args.dry_run:
         print(digest_html)
         return
 
-    # 4) Enviar correo (linkonly, SOLO el digest como body)
-    subject = f"Daily Agent Digest {datetime.now().strftime('%Y-%m-%d')}"
+    # 4) Envío de email (modo link-only + cuerpo = digest)
+    subject = f"{EMAIL_SUBJECT_PREFIX} Daily Agent Digest {datetime.now().strftime('%Y-%m-%d')}"
     send_email(
         subject=subject,
-        html_path=REPORT_OUT_PATH,
-        attachments=[],            # en linkonly no adjuntamos
-        extra_html=digest_html,    # cuerpo = solo digest (ya no duplica link)
+        html_path=REPORT_OUT_PATH,   # en link-only se ignoran adjuntos
+        attachments=[],
+        extra_html=digest_html,      # cuerpo = SOLO el digest
     )
     print("[agent] Email enviado.")
 
