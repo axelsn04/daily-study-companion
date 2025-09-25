@@ -11,13 +11,14 @@ from finance import fetch_prices, basic_stats, plot_prices
 from report import save_report
 from email_send import send_email
 
-# Digest del agente para el cuerpo del email
+# Agent digest (no link inside)
 from agent import generate_digest_html
 
 load_dotenv()
 
 OUTPUT_HTML = os.getenv("REPORT_OUT_PATH", "data/processed/daily_report.html")
 SEND_CHANNEL = os.getenv("SEND_CHANNEL", "email").lower()
+REPORT_PUBLIC_URL = (os.getenv("REPORT_PUBLIC_URL", "") or "").strip()
 
 
 def main() -> None:
@@ -45,7 +46,7 @@ def main() -> None:
     )
     print(f"Reporte generado: {out_path}")
 
-    # 5) Envío por email (link-only) + digest del agente en el cuerpo
+    # 5) Email (link-only) + digest del agente como cuerpo
     if SEND_CHANNEL == "email":
         try:
             today_str = datetime.now().strftime("%Y-%m-%d")
@@ -53,12 +54,18 @@ def main() -> None:
 
             digest_html = generate_digest_html(news_items, stats, k=5)
 
-            # Link-only, sin adjuntos; usamos extra_html para el cuerpo
+            # 👇 Añadimos el link al reporte público al final del cuerpo
+            if REPORT_PUBLIC_URL:
+                digest_html += (
+                    f'\n<p>Ver reporte completo: '
+                    f'<a href="{REPORT_PUBLIC_URL}">{REPORT_PUBLIC_URL}</a></p>'
+                )
+
             send_email(
                 subject=subject,
                 html_path=out_path,
                 attachments=[],
-                extra_html=digest_html,
+                extra_html=digest_html,   # usa el digest como body
             )
         except Exception as e:
             print(f"[email] Error enviando correo: {e}")
