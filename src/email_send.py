@@ -22,15 +22,13 @@ def send_email(
     subject: str,
     html_path: str,
     attachments: Optional[Iterable[str]] = None,
-    intro_html: Optional[str] = None,
+    body_html: Optional[str] = None,  # 👈 NUEVO: HTML breve para el cuerpo
 ) -> None:
     """
-    Envía un correo con el reporte.
-
-    Modes (EMAIL_EMBED_MODE):
-      - 'linkonly'  : cuerpo minimal con link público + (opcional) intro_html. No adjuntos.
-      - 'attachment': cuerpo simple + adjunta el HTML (y adjuntos extra si pasan).
-      - 'inline'    : incrusta el HTML como body (no recomendado para CSS moderno).
+    Modes:
+      - linkonly: send only a (nice) HTML body + link (no attachments).
+      - attachment (default): simple body + attach the HTML (and optional extras).
+      - inline: embed HTML as body (may look broken with modern CSS).
     """
     if not EMAIL_FROM or not EMAIL_TO or not GMAIL_APP_PASSWORD:
         raise RuntimeError("Faltan credenciales de email (EMAIL_FROM, EMAIL_TO, GMAIL_APP_PASSWORD)")
@@ -39,21 +37,18 @@ def send_email(
     full_subject = f"{SUBJECT_PREFIX} {subject}".strip()
 
     contents: List = []
-    final_attachments: List[str] = []  # siempre definido
+    final_attachments: List[str] = []  # always defined
     mode = EMAIL_EMBED_MODE
 
     if mode == "linkonly":
-        # Si no hay URL pública, caemos a 'attachment'
-        if not REPORT_PUBLIC_URL:
-            mode = "attachment"
-        else:
-            if intro_html:
-                contents.append(intro_html)  # mini-resumen del agente en HTML
-            contents.append(
-                "<h3>Daily Study & News</h3>"
-                f'<p>Abre tu reporte aquí: <a href="{REPORT_PUBLIC_URL}">{REPORT_PUBLIC_URL}</a></p>'
-            )
-            # sin adjuntos en linkonly
+        # Cuerpo bonito: digest (si llega) + link
+        digest_block = body_html or "<p><strong>Daily Study &amp; News</strong></p>"
+        link_line = (
+            f'<p>Ver reporte completo: <a href="{REPORT_PUBLIC_URL}">{REPORT_PUBLIC_URL}</a></p>'
+            if REPORT_PUBLIC_URL else "<p>Genera el reporte local y consúltalo en tu equipo.</p>"
+        )
+        contents.append(digest_block + "\n" + link_line)
+        # sin adjuntos en linkonly
 
     if mode == "inline":
         html_text = Path(html_path).read_text(encoding="utf-8")
@@ -62,16 +57,10 @@ def send_email(
 
     if mode not in ("linkonly", "inline"):
         # attachment
-        link = (
-            f' <a href="{REPORT_PUBLIC_URL}">{REPORT_PUBLIC_URL}</a>'
-            if REPORT_PUBLIC_URL else ""
-        )
-        if intro_html:
-            contents.append(intro_html)
+        link = f' <a href="{REPORT_PUBLIC_URL}">{REPORT_PUBLIC_URL}</a>' if REPORT_PUBLIC_URL else ""
         contents.append(
-            "<h3>Daily Study & News</h3>"
-            "<p>Adjuntamos tu reporte del día.</p>"
-            + (f"<p>También online:{link}</p>" if link else "")
+            "<h3>Daily Study &amp; News</h3><p>Adjuntamos tu reporte del día.</p>"
+            + (f"<p>También online: {link}</p>" if link else "")
         )
         final_attachments = _ensure_list(attachments)
         if html_path not in final_attachments:
