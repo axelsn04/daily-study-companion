@@ -11,7 +11,7 @@ from finance import fetch_prices, basic_stats, plot_prices
 from report import save_report
 from email_send import send_email
 
-# 👇 NUEVO: digest del agente para el cuerpo del email
+# Digest del agente para el cuerpo del email
 from agent import generate_digest_html
 
 load_dotenv()
@@ -53,12 +53,12 @@ def main() -> None:
 
             digest_html = generate_digest_html(news_items, stats, k=5)
 
-            # Link-only, sin adjuntos; metemos digest como body_html
+            # Link-only, sin adjuntos; usamos extra_html para el cuerpo
             send_email(
                 subject=subject,
                 html_path=out_path,
                 attachments=[],
-                body_html=digest_html,
+                extra_html=digest_html,
             )
         except Exception as e:
             print(f"[email] Error enviando correo: {e}")
