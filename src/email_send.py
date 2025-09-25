@@ -18,12 +18,19 @@ def _ensure_list(x: Optional[Iterable[str]]) -> List[str]:
     return list(x) if x else []
 
 
-def send_email(subject: str, html_path: str, attachments: Optional[Iterable[str]] = None) -> None:
+def send_email(
+    subject: str,
+    html_path: str,
+    attachments: Optional[Iterable[str]] = None,
+    intro_html: Optional[str] = None,
+) -> None:
     """
-    Modes:
-      - linkonly: send only a link in the body, no attachments.
-      - attachment (default): simple body + attach the HTML (and optional extras).
-      - inline: embed HTML as body (may look broken with modern CSS).
+    Envía un correo con el reporte.
+
+    Modes (EMAIL_EMBED_MODE):
+      - 'linkonly'  : cuerpo minimal con link público + (opcional) intro_html. No adjuntos.
+      - 'attachment': cuerpo simple + adjunta el HTML (y adjuntos extra si pasan).
+      - 'inline'    : incrusta el HTML como body (no recomendado para CSS moderno).
     """
     if not EMAIL_FROM or not EMAIL_TO or not GMAIL_APP_PASSWORD:
         raise RuntimeError("Faltan credenciales de email (EMAIL_FROM, EMAIL_TO, GMAIL_APP_PASSWORD)")
@@ -32,18 +39,22 @@ def send_email(subject: str, html_path: str, attachments: Optional[Iterable[str]
     full_subject = f"{SUBJECT_PREFIX} {subject}".strip()
 
     contents: List = []
-    final_attachments: List[str] = []  # always defined
+    final_attachments: List[str] = []  # siempre definido
     mode = EMAIL_EMBED_MODE
 
     if mode == "linkonly":
+        # Si no hay URL pública, caemos a 'attachment'
         if not REPORT_PUBLIC_URL:
-            mode = "attachment"  # fallback si no hay URL pública
+            mode = "attachment"
         else:
+            if intro_html:
+                contents.append(intro_html)  # mini-resumen del agente en HTML
             contents.append(
                 "<h3>Daily Study & News</h3>"
                 f'<p>Abre tu reporte aquí: <a href="{REPORT_PUBLIC_URL}">{REPORT_PUBLIC_URL}</a></p>'
             )
             # sin adjuntos en linkonly
+
     if mode == "inline":
         html_text = Path(html_path).read_text(encoding="utf-8")
         contents.append(yagmail.inline(html_text))
@@ -51,8 +62,17 @@ def send_email(subject: str, html_path: str, attachments: Optional[Iterable[str]
 
     if mode not in ("linkonly", "inline"):
         # attachment
-        link = f' <a href="{REPORT_PUBLIC_URL}">{REPORT_PUBLIC_URL}</a>' if REPORT_PUBLIC_URL else ""
-        contents.append("<h3>Daily Study & News</h3><p>Adjuntamos tu reporte del día.</p>" + (f"<p>También online: {link}</p>" if link else ""))
+        link = (
+            f' <a href="{REPORT_PUBLIC_URL}">{REPORT_PUBLIC_URL}</a>'
+            if REPORT_PUBLIC_URL else ""
+        )
+        if intro_html:
+            contents.append(intro_html)
+        contents.append(
+            "<h3>Daily Study & News</h3>"
+            "<p>Adjuntamos tu reporte del día.</p>"
+            + (f"<p>También online:{link}</p>" if link else "")
+        )
         final_attachments = _ensure_list(attachments)
         if html_path not in final_attachments:
             final_attachments.insert(0, html_path)
