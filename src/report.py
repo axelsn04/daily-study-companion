@@ -206,7 +206,7 @@ def save_report(
         raise FileNotFoundError("Falta templates/report.html")
 
     now = datetime.now().astimezone()
-    tzname = now.tzinfo.tzname(now) if now.tzinfo else "Local"
+    tzname = str = ((now.tzinfo.tzname(now) if now.tzinfo else None) or "Local")
 
     html = template_path.read_text(encoding="utf-8")
     html = (
