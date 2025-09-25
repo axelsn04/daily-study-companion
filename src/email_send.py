@@ -22,13 +22,14 @@ def send_email(
     subject: str,
     html_path: str,
     attachments: Optional[Iterable[str]] = None,
-    body_html: Optional[str] = None,  # 👈 NUEVO: HTML breve para el cuerpo
+    extra_html: Optional[str] = None,   # <- NUEVO
 ) -> None:
     """
     Modes:
-      - linkonly: send only a (nice) HTML body + link (no attachments).
-      - attachment (default): simple body + attach the HTML (and optional extras).
-      - inline: embed HTML as body (may look broken with modern CSS).
+      - linkonly: si extra_html está presente -> se usa SOLO extra_html como body.
+                  si NO hay extra_html -> se manda un body minimal con el link público.
+      - attachment (default): body breve + adjunta HTML (y extras opcionales).
+      - inline: pega el HTML completo como cuerpo (no recomendable por CSS moderno).
     """
     if not EMAIL_FROM or not EMAIL_TO or not GMAIL_APP_PASSWORD:
         raise RuntimeError("Faltan credenciales de email (EMAIL_FROM, EMAIL_TO, GMAIL_APP_PASSWORD)")
@@ -37,31 +38,38 @@ def send_email(
     full_subject = f"{SUBJECT_PREFIX} {subject}".strip()
 
     contents: List = []
-    final_attachments: List[str] = []  # always defined
+    final_attachments: List[str] = []  # siempre definida
     mode = EMAIL_EMBED_MODE
 
     if mode == "linkonly":
-        # Cuerpo bonito: digest (si llega) + link
-        digest_block = body_html or "<p><strong>Daily Study &amp; News</strong></p>"
-        link_line = (
-            f'<p>Ver reporte completo: <a href="{REPORT_PUBLIC_URL}">{REPORT_PUBLIC_URL}</a></p>'
-            if REPORT_PUBLIC_URL else "<p>Genera el reporte local y consúltalo en tu equipo.</p>"
-        )
-        contents.append(digest_block + "\n" + link_line)
+        if extra_html:
+            # SOLO el HTML extra que nos pasas (sin encabezado/link por defecto)
+            contents.append(extra_html)
+        else:
+            # fallback minimal si no nos diste extra_html
+            body = ["<h3>Daily Study & News</h3>"]
+            if REPORT_PUBLIC_URL:
+                body.append(f'<p>Abre tu reporte aquí: <a href="{REPORT_PUBLIC_URL}">{REPORT_PUBLIC_URL}</a></p>')
+            contents.append("\n".join(body))
         # sin adjuntos en linkonly
 
-    if mode == "inline":
+    elif mode == "inline":
         html_text = Path(html_path).read_text(encoding="utf-8")
-        contents.append(yagmail.inline(html_text))
+        body = html_text + (extra_html or "")
+        contents.append(yagmail.inline(body))
         # sin adjuntos
 
-    if mode not in ("linkonly", "inline"):
+    else:
         # attachment
         link = f' <a href="{REPORT_PUBLIC_URL}">{REPORT_PUBLIC_URL}</a>' if REPORT_PUBLIC_URL else ""
-        contents.append(
-            "<h3>Daily Study &amp; News</h3><p>Adjuntamos tu reporte del día.</p>"
+        body = (
+            "<h3>Daily Study & News</h3><p>Adjuntamos tu reporte del día.</p>"
             + (f"<p>También online: {link}</p>" if link else "")
         )
+        if extra_html:
+            body += ("\n" + extra_html)
+        contents.append(body)
+
         final_attachments = _ensure_list(attachments)
         if html_path not in final_attachments:
             final_attachments.insert(0, html_path)
