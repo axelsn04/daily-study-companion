@@ -201,10 +201,13 @@ def plot_prices(prices: Dict[str, pd.DataFrame]) -> List[str]:
         plt.ylabel("Close")
         plt.tight_layout()
 
-        out = (outdir / f"{t}_close.png").resolve()
-        fig.savefig(out, dpi=140)
+        out_path = outdir / f"{t}_close.png"
+        fig.savefig(out_path, dpi=140)
         plt.close(fig)
 
-        imgs.append(str(out))  # absoluta
+        report_out = os.getenv("REPORT_OUT_PATH", "data/processed/daily_report.html")
+        report_dir = Path(report_out).parent
+        rel = os.path.relpath(out_path, report_dir)
+        imgs.append(rel.replace(os.sep, "/")) 
 
     return imgs
