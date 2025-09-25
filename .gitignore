@@ -18,4 +18,4 @@ docs/*.ics
 
 # Notebooks cache
 .ipynb_checkpoints/
-docs/daily_report.html
+

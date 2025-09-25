@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Daily Study & News Companion</title>
+  <style>
+    :root{
+      --bg:#0b0f14; --panel:#131a22; --muted:#8a98a6; --text:#e7eef6;
+      --chip:#223144; --chip-b:#2e4055; --up:#2fd77a; --down:#ff5f5f; --shadow:0 6px 24px rgba(0,0,0,.35);
+      --accent:#66e0a3;
+    }
+    .light{
+      --bg:#f7f8fb; --panel:#ffffff; --muted:#5e6a76; --text:#0d141c;
+      --chip:#f1f5f9; --chip-b:#d9e0e6; --up:#1e8e3e; --down:#b22; --shadow:0 6px 18px rgba(0,0,0,.08);
+      --accent:#08c794;
+    }
+    html,body{height:100%}
+    body{margin:0;padding:24px;background:var(--bg);color:var(--text);font:16px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial}
+    header{max-width:1280px;margin:0 auto 18px;display:flex;align-items:center;justify-content:space-between}
+    h1{margin:0 0 6px;font-size:28px}
+    .sub{color:var(--muted);font-size:14px}
+    .btn{border:1px solid var(--chip-b);background:var(--chip);color:var(--text);padding:8px 10px;border-radius:10px;cursor:pointer}
+
+    .layout{max-width:1280px;margin:0 auto;display:grid;grid-template-columns:320px 1fr;gap:16px;align-items:start}
+    #sidebar{position:relative}
+    .sticky{position:sticky;top:16px}
+
+    .card{background:var(--panel);border:1px solid var(--chip-b);border-radius:14px;box-shadow:var(--shadow)}
+    .card-head{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid var(--chip-b)}
+    .card-body{padding:16px}
+
+    /* Agenda */
+    .badge-row{display:flex;gap:8px;align-items:center;margin-bottom:8px}
+    .badge{background:var(--chip);border:1px solid var(--chip-b);padding:4px 8px;border-radius:8px;font-size:12px}
+    .chips{display:flex;gap:8px;flex-wrap:wrap}
+    .chip{background:var(--chip);border:1px solid var(--chip-b);padding:6px 10px;border-radius:10px;font-size:13px}
+    .evt{font-size:14px}
+
+    /* ===== Carrusel de Markets (container queries + scroll-snap) ===== */
+    .carousel-wrap{position:relative}
+    .viewport{
+      position:relative;
+      overflow:hidden;
+      width:100%;
+      container-type:inline-size;   /* clave: 100cqw = ancho del carrusel */
+    }
+    .track{
+      --gap:12px;
+      display:flex;
+      gap:var(--gap);
+      overflow-x:auto;
+      scroll-snap-type:x mandatory;
+      scroll-behavior:smooth;
+      padding-bottom:2px;
+      will-change:scroll-position;
+    }
+    .track::-webkit-scrollbar{ height:8px }
+    .track::-webkit-scrollbar-thumb{ background:var(--chip-b); border-radius:8px }
+
+    /* EXACTAMENTE 2 por vista (1 en móvil) */
+    .mkt-card{
+      flex:0 0 calc((100cqw - var(--gap))/2);  /* 2 por vista descontando el gap */
+      scroll-snap-align:start;
+      background:var(--bg);
+      border:1px solid var(--chip-b);
+      border-radius:12px;
+      overflow:hidden;
+    }
+    @container (max-width:700px){
+      .mkt-card{ flex-basis:100cqw }          /* 1 por vista cuando el contenedor es angosto */
+    }
+
+    .mkt-head{display:flex;align-items:center;justify-content:space-between;padding:8px 10px;border-bottom:1px solid var(--chip-b)}
+    .ticker{font-weight:700;letter-spacing:.5px}
+    .mini.pill{border:1px solid var(--chip-b);background:var(--chip);color:var(--text);padding:3px 7px;border-radius:999px;font-size:12px;cursor:pointer}
+    .mkt-body{display:grid;grid-template-rows:auto 1fr;gap:8px;padding:10px}
+    .metrics-row{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px}
+    .kv{background:var(--panel);border:1px solid var(--chip-b);border-radius:10px;padding:8px;text-align:center;font-size:13px}
+    .kv span{display:block;color:var(--muted);font-size:11px;margin-bottom:2px}
+    .kv b{font-weight:700}
+    .up{color:var(--up)} .down{color:var(--down)} .flat{color:var(--muted)}
+    .chart img{width:100%;display:block;border-radius:8px}
+    .noimg{color:var(--muted);text-align:center;padding:24px 0}
+
+    .nav{display:flex;gap:8px}
+    .navbtn{border:1px solid var(--chip-b);background:var(--chip);color:var(--text);padding:6px 9px;border-radius:10px;cursor:pointer}
+    .navbtn[disabled]{opacity:.45;cursor:not-allowed}
+
+    /* Noticias */
+    .filters{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+    .pill{border:1px solid var(--chip-b);background:var(--chip);color:var(--text);padding:6px 10px;border-radius:999px;cursor:pointer;font-size:13px}
+    .pill[data-active="true"]{outline:2px solid var(--accent)}
+    .news-group{margin-bottom:14px}
+    .topic-chip{display:inline-block;font-size:12px;padding:3px 8px;border-radius:999px;background:var(--chip);border:1px solid var(--chip-b);margin-bottom:8px}
+    .news-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px}
+    .news-item a{color:var(--text);text-decoration:none}
+    .news-item a:hover{text-decoration:underline}
+    .news-item .meta{color:var(--muted);font-size:12px;margin-top:2px}
+    .dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--accent);margin-right:8px;transform:translateY(-1px)}
+    .empty{color:var(--muted)}
+
+    footer{max-width:1280px;margin:10px auto;color:var(--muted);font-size:12px;text-align:center}
+    @media (max-width:980px){.layout{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>Daily Study & News Companion</h1>
+      <div class="sub">2025-09-25 03:32 · TZ: CST</div>
+    </div>
+    <button class="btn" id="themeBtn">🌓 Tema</button>
+  </header>
+
+  <div class="layout">
+    
+    <aside id="sidebar">
+      <section class="card sticky">
+        <div class="card-head"><h2>📅 Agenda de hoy</h2></div>
+        <div class="card-body">
+          <h3>Eventos</h3>
+          <div class="badge-row"><span class="badge">00:00</span><span class="evt">prueba 1</span></div>
+          <h3>Huecos de estudio</h3>
+          <div class="chips"><span class="chip">08:00–21:00</span></div>
+        </div>
+      </section>
+    </aside>
+    
+    <main id="content" class="col">
+      <!-- Markets arriba -->
+      
+    <section id="markets" class="card" data-carousel="markets">
+      <div class="card-head">
+        <h2>💹 Markets</h2>
+        <div class="nav">
+          <button class="navbtn prev" aria-label="Anterior">←</button>
+          <button class="navbtn next" aria-label="Siguiente">→</button>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="carousel-wrap">
+          <div class="viewport">
+            <div class="track">
+              
+        <div class="mkt-card">
+          <div class="mkt-head">
+            <div class="ticker">AMZN</div>
+            <button class="mini pill" onclick="this.closest('.mkt-card').classList.toggle('big')">↕</button>
+          </div>
+          <div class="mkt-body">
+            <div class="metrics-row">
+          <div class="kv"><span>Last</span><b>220.21</b></div>
+          <div class="kv"><span>d/d</span><b class="down">-5.22%</b></div>
+          <div class="kv"><span>Mín</span><b>220.21</b></div>
+          <div class="kv"><span>Máx</span><b>238.24</b></div>
+          <div class="kv"><span>σ</span><b>4.80</b></div>
+        </div>
+            <div class="chart"><img src="charts/AMZN_close.png" alt="AMZN chart" loading="lazy"/></div>
+          </div>
+        </div>
+        
+        <div class="mkt-card">
+          <div class="mkt-head">
+            <div class="ticker">MSFT</div>
+            <button class="mini pill" onclick="this.closest('.mkt-card').classList.toggle('big')">↕</button>
+          </div>
+          <div class="mkt-body">
+            <div class="metrics-row">
+          <div class="kv"><span>Last</span><b>510.15</b></div>
+          <div class="kv"><span>d/d</span><b class="up">3.06%</b></div>
+          <div class="kv"><span>Mín</span><b>495.00</b></div>
+          <div class="kv"><span>Máx</span><b>517.93</b></div>
+          <div class="kv"><span>σ</span><b>6.86</b></div>
+        </div>
+            <div class="chart"><img src="charts/MSFT_close.png" alt="MSFT chart" loading="lazy"/></div>
+          </div>
+        </div>
+        
+        <div class="mkt-card">
+          <div class="mkt-head">
+            <div class="ticker">NVDA</div>
+            <button class="mini pill" onclick="this.closest('.mkt-card').classList.toggle('big')">↕</button>
+          </div>
+          <div class="mkt-body">
+            <div class="metrics-row">
+          <div class="kv"><span>Last</span><b>176.97</b></div>
+          <div class="kv"><span>d/d</span><b class="up">5.96%</b></div>
+          <div class="kv"><span>Mín</span><b>167.02</b></div>
+          <div class="kv"><span>Máx</span><b>183.61</b></div>
+          <div class="kv"><span>σ</span><b>4.37</b></div>
+        </div>
+            <div class="chart"><img src="charts/NVDA_close.png" alt="NVDA chart" loading="lazy"/></div>
+          </div>
+        </div>
+        
+        <div class="mkt-card">
+          <div class="mkt-head">
+            <div class="ticker">TSLA</div>
+            <button class="mini pill" onclick="this.closest('.mkt-card').classList.toggle('big')">↕</button>
+          </div>
+          <div class="mkt-body">
+            <div class="metrics-row">
+          <div class="kv"><span>Last</span><b>442.79</b></div>
+          <div class="kv"><span>d/d</span><b class="up">26.21%</b></div>
+          <div class="kv"><span>Mín</span><b>346.40</b></div>
+          <div class="kv"><span>Máx</span><b>442.79</b></div>
+          <div class="kv"><span>σ</span><b>35.43</b></div>
+        </div>
+            <div class="chart"><img src="charts/TSLA_close.png" alt="TSLA chart" loading="lazy"/></div>
+          </div>
+        </div>
+        
+        <div class="mkt-card">
+          <div class="mkt-head">
+            <div class="ticker">^GSPC</div>
+            <button class="mini pill" onclick="this.closest('.mkt-card').classList.toggle('big')">↕</button>
+          </div>
+          <div class="mkt-body">
+            <div class="metrics-row">
+          <div class="kv"><span>Last</span><b>661.10</b></div>
+          <div class="kv"><span>d/d</span><b class="up">2.14%</b></div>
+          <div class="kv"><span>Mín</span><b>647.24</b></div>
+          <div class="kv"><span>Máx</span><b>666.84</b></div>
+          <div class="kv"><span>σ</span><b>5.81</b></div>
+        </div>
+            <div class="chart"><img src="charts/^GSPC_close.png" alt="^GSPC chart" loading="lazy"/></div>
+          </div>
+        </div>
+        
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+    
+      <!-- Noticias debajo -->
+      
+    <section id="news" class="card">
+      <div class="card-head">
+        <h2>📰 Noticias</h2>
+        <div class="filters">
+          <button class="pill" data-topic="all" data-active="true">All</button>
+          <button class="pill" data-topic="AI">AI</button><button class="pill" data-topic="Fintech">Fintech</button><button class="pill" data-topic="General">General</button><button class="pill" data-topic="Machine Learning">Machine Learning</button>
+        </div>
+      </div>
+      <div class="card-body">
+          <div class="news-group" data-group="AI">
+            <div class="topic-chip">AI</div>
+            <ul class="news-list">
+              <li class="news-item" data-topic="AI">
+                <span class="dot"></span>
+                <a href="https://www.bloomberg.com/news/articles/2025-09-25/ai-startup-nscale-raises-1-1-billion-for-data-center-expansion" target="_blank" rel="noreferrer">UK’s Nscale Raises $1.1 Billion in AI Data Center Frenzy</a>
+                <div class="meta">2025-09-25 07:22 · <span class="src">Mark Bergen, Kari Lundgren</span></div>
+              </li>
+            
+              <li class="news-item" data-topic="AI">
+                <span class="dot"></span>
+                <a href="https://www.bloomberg.com/news/articles/2025-09-25/chinese-tech-stocks-extend-rally-set-for-record-winning-streak" target="_blank" rel="noreferrer">Chinese Tech Stocks Advance, Set for Record Winning Streak</a>
+                <div class="meta">2025-09-25 05:11 · <span class="src">Charlotte Yang</span></div>
+              </li>
+            
+              <li class="news-item" data-topic="AI">
+                <span class="dot"></span>
+                <a href="https://www.bloomberg.com/news/articles/2025-09-25/alibaba-s-ai-ambitions-make-it-top-performing-china-tech-stock" target="_blank" rel="noreferrer">Alibaba’s AI Ambitions Make It Top-Performing China Tech Stock</a>
+                <div class="meta">2025-09-25 00:27 · <span class="src">Jeanny Yu</span></div>
+              </li>
+            
+              <li class="news-item" data-topic="AI">
+                <span class="dot"></span>
+                <a href="https://www.bloomberg.com/news/videos/2025-09-24/bloomberg-tech-9-24-2025-video" target="_blank" rel="noreferrer">Alibaba to Ramp Up AI Spend, Kimmel Returns to Late Night | Bloomberg Tech 9/24/2025</a>
+                <div class="meta">2025-09-24 20:33 · <span class="src">www.bloomberg.com</span></div>
+              </li>
+            
+              <li class="news-item" data-topic="AI">
+                <span class="dot"></span>
+                <a href="https://www.bloomberg.com/news/articles/2025-09-24/us-stocks-resume-rally-as-alibaba-ai-spending-bolsters-tech" target="_blank" rel="noreferrer">US Stocks Extend Declines as Fading AI-Led Gains Stop Tech Rally</a>
+                <div class="meta">2025-09-24 13:45 · <span class="src">Joel Leon</span></div>
+              </li>
+            
+              <li class="news-item" data-topic="AI">
+                <span class="dot"></span>
+                <a href="https://www.bloomberg.com/news/articles/2025-09-24/oracle-looks-to-raise-15-billion-from-corporate-bond-sale" target="_blank" rel="noreferrer">Oracle Raises $18 Billion in Second-Biggest Bond Sale This Year</a>
+                <div class="meta">2025-09-24 12:17 · <span class="src">Ethan M Steinberg, Brody Ford, Brian W Smith</span></div>
+              </li>
+            </ul>
+          </div>
+        
+          <div class="news-group" data-group="Fintech">
+            <div class="topic-chip">Fintech</div>
+            <ul class="news-list">
+              <li class="news-item" data-topic="Fintech">
+                <span class="dot"></span>
+                <a href="https://www.bloomberg.com/news/articles/2025-09-25/ecb-should-pay-particular-interest-to-rising-food-prices-blog" target="_blank" rel="noreferrer">ECB Should Pay ‘Particular Interest’ to Rising Food Prices: Blog</a>
+                <div class="meta">2025-09-25 09:03 · <span class="src">Mark Schroers</span></div>
+              </li>
+            
+              <li class="news-item" data-topic="Fintech">
+                <span class="dot"></span>
+                <a href="https://www.bloomberg.com/news/articles/2025-09-25/ozan-tarman-on-what-s-driving-the-nonstop-rise-in-gold-and-tech" target="_blank" rel="noreferrer">Ozan Tarman on What's Driving The Nonstop Rise in Gold and Tech</a>
+                <div class="meta">2025-09-25 08:00 · <span class="src">Joe Weisenthal, Tracy Alloway</span></div>
+              </li>
+            
+              <li class="news-item" data-topic="Fintech">
+                <span class="dot"></span>
+                <a href="https://www.bloomberg.com/news/articles/2025-09-25/ecb-to-be-pateint-now-inflation-goal-has-been-met-kazimir-says" target="_blank" rel="noreferrer">ECB to Be Patient Now Inflation Goal Has Been Met, Kazimir Says</a>
+                <div class="meta">2025-09-25 07:59 · <span class="src">Daniel Hornak</span></div>
+              </li>
+            
+              <li class="news-item" data-topic="Fintech">
+                <span class="dot"></span>
+                <a href="https://www.ft.com/content/f7a3dbe3-3128-401c-9237-a8d88856f4ad" target="_blank" rel="noreferrer">What’s next for H-1B visas and a long-awaited TikTok deal</a>
+                <div class="meta">2025-09-25 07:15 · <span class="src">www.ft.com</span></div>
+              </li>
+            
+              <li class="news-item" data-topic="Fintech">
+                <span class="dot"></span>
+                <a href="https://www.bloomberg.com/news/articles/2025-09-25/naver-shares-surge-on-reports-of-top-crypto-exchange-takeover" target="_blank" rel="noreferrer">Naver Shares Surge on Tie-Up Talks With Top Crypto Exchange</a>
+                <div class="meta">2025-09-25 04:05 · <span class="src">Shinhye Kang</span></div>
+              </li>
+            
+              <li class="news-item" data-topic="Fintech">
+                <span class="dot"></span>
+                <a href="https://www.ft.com/content/eabd56fd-4bd7-4c5b-8349-990d9caa8252" target="_blank" rel="noreferrer">Trump attack on specialist visa hits its biggest beneficiaries: tech titans</a>
+                <div class="meta">2025-09-23 15:31 · <span class="src">www.ft.com</span></div>
+              </li>
+            </ul>
+          </div>
+        
+          <div class="news-group" data-group="General">
+            <div class="topic-chip">General</div>
+            <ul class="news-list">
+              <li class="news-item" data-topic="General">
+                <span class="dot"></span>
+                <a href="https://www.bloomberg.com/news/articles/2025-09-25/massive-bangkok-sinkhole-repair-expected-to-take-about-two-weeks" target="_blank" rel="noreferrer">Massive Bangkok Sinkhole Repair Expected to Take About Two Weeks</a>
+                <div class="meta">2025-09-25 09:19 · <span class="src">Pathom Sangwongwanich</span></div>
+              </li>
+            
+              <li class="news-item" data-topic="General">
+                <span class="dot"></span>
+                <a href="https://www.bloomberg.com/news/videos/2025-09-25/kkr-says-private-markets-democratization-is-megatrend-video" target="_blank" rel="noreferrer">KKR Says Private Markets Democratization Is 'Megatrend' (Video)</a>
+                <div class="meta">2025-09-25 09:17 · <span class="src">www.bloomberg.com</span></div>
+              </li>
+            
+              <li class="news-item" data-topic="General">
+                <span class="dot"></span>
+                <a href="https://www.bloomberg.com/news/articles/2025-09-25/china-s-top-copper-smelters-call-for-action-against-new-capacity" target="_blank" rel="noreferrer">China’s Top Copper Smelters Call for Action Against New Capacity</a>
+                <div class="meta">2025-09-25 09:13 · <span class="src">Alfred Cang</span></div>
+              </li>
+            
+              <li class="news-item" data-topic="General">
+                <span class="dot"></span>
+                <a href="https://www.bloomberg.com/news/articles/2025-09-25/uk-budget-angst-hits-gilt-auctions-as-investor-appetite-fades" target="_blank" rel="noreferrer">UK Budget Angst Hits Gilt Sales as Investor Appetite Fades</a>
+                <div class="meta">2025-09-25 05:30 · <span class="src">James Hirai</span></div>
+              </li>
+            
+              <li class="news-item" data-topic="General">
+                <span class="dot"></span>
+                <a href="https://www.bloomberg.com/news/articles/2025-09-24/chery-china-s-biggest-car-exporter-set-for-hong-kong-debut" target="_blank" rel="noreferrer">China’s Top Car Exporter Chery Gains in Hong Kong Debut</a>
+                <div class="meta">2025-09-24 23:00 · <span class="src">Charlotte Yang</span></div>
+              </li>
+            
+              <li class="news-item" data-topic="General">
+                <span class="dot"></span>
+                <a href="https://www.bloomberg.com/news/articles/2025-09-24/stock-market-today-dow-s-p-live-updates" target="_blank" rel="noreferrer">US Stocks Halt Slide as Traders Eye New Catalysts: Markets Wrap</a>
+                <div class="meta">2025-09-24 22:30 · <span class="src">Andre Janse Van Vuuren, Macarena Munoz Montijano</span></div>
+              </li>
+            </ul>
+          </div>
+        
+          <div class="news-group" data-group="Machine Learning">
+            <div class="topic-chip">Machine Learning</div>
+            <ul class="news-list">
+              <li class="news-item" data-topic="Machine Learning">
+                <span class="dot"></span>
+                <a href="https://www.bloomberg.com/news/articles/2025-09-25/south-africa-ports-improve-but-stay-at-bottom-of-world-bank-rank" target="_blank" rel="noreferrer">South Africa Ports Improve But Stay at Bottom of World Bank Rank</a>
+                <div class="meta">2025-09-25 09:01 · <span class="src">Paul Burkhardt</span></div>
+              </li>
+            
+              <li class="news-item" data-topic="Machine Learning">
+                <span class="dot"></span>
+                <a href="https://www.bloomberg.com/news/features/2025-09-25/caastle-s-christine-hunsicker-accused-of-financial-scam" target="_blank" rel="noreferrer">The Tech Fashion Darling Accused of Swindling Investors Out of $300 Million</a>
+                <div class="meta">2025-09-25 09:00 · <span class="src">Jill R Shah, Kim Bhasin</span></div>
+              </li>
+            
+              <li class="news-item" data-topic="Machine Learning">
+                <span class="dot"></span>
+                <a href="https://www.bloomberg.com/news/articles/2025-09-25/german-economic-growth-won-t-last-without-reforms-advisers-warn" target="_blank" rel="noreferrer">Germany’s Growth Won’t Last Without Reforms, Advisers Warn</a>
+                <div class="meta">2025-09-25 08:00 · <span class="src">Alexander Weber</span></div>
+              </li>
+            
+              <li class="news-item" data-topic="Machine Learning">
+                <span class="dot"></span>
+                <a href="https://www.bloomberg.com/news/videos/2025-09-25/horizons-middle-east-africa-9-25-2025-video" target="_blank" rel="noreferrer">Horizons Middle East & Africa 9/25/2025</a>
+                <div class="meta">2025-09-25 07:45 · <span class="src">www.bloomberg.com</span></div>
+              </li>
+            
+              <li class="news-item" data-topic="Machine Learning">
+                <span class="dot"></span>
+                <a href="https://www.bloomberg.com/news/videos/2025-09-25/a-sputnik-moment-hsbc-quantum-computing-breakthrough" target="_blank" rel="noreferrer">A 'Sputnik Moment' | HSBC Quantum Computing Breakthrough</a>
+                <div class="meta">2025-09-25 07:40 · <span class="src">www.bloomberg.com</span></div>
+              </li>
+            
+              <li class="news-item" data-topic="Machine Learning">
+                <span class="dot"></span>
+                <a href="https://www.bloomberg.com/news/articles/2025-09-25/snb-keeps-rate-at-zero-in-first-halt-to-easing-since-early-2023" target="_blank" rel="noreferrer">SNB Keeps Rate at Zero in First Easing Halt Since Early 2024</a>
+                <div class="meta">2025-09-25 07:34 · <span class="src">Bastian Benrath-Wright</span></div>
+              </li>
+            </ul>
+          </div>
+        </div>
+    </section>
+    
+    </main>
+  </div>
+
+  <footer>Generado localmente · 2025-09-25 03:32</footer>
+
+  <script>
+    'use strict';
+
+    // Tema persistente
+    const btn = document.getElementById('themeBtn');
+    const saved = localStorage.getItem('themeMode') || 'dark';
+    if (saved === 'light') document.documentElement.classList.add('light');
+    btn.onclick = () => {
+      document.documentElement.classList.toggle('light');
+      localStorage.setItem('themeMode',
+        document.documentElement.classList.contains('light') ? 'light' : 'dark'
+      );
+    };
+
+    // Filtro de noticias
+    const pills = document.querySelectorAll('.filters .pill');
+    const groups = document.querySelectorAll('.news-group');
+    pills.forEach(p => {
+      p.addEventListener('click', () => {
+        pills.forEach(x => x.removeAttribute('data-active'));
+        p.setAttribute('data-active','true');
+        const topic = p.dataset.topic;
+        groups.forEach(g => g.style.display = (topic==='all' || g.dataset.group===topic) ? 'block' : 'none');
+      });
+    });
+
+    // Carrusel con scroll-snap: 2 por vista (1 en móvil). Flechas mueven 1 card.
+    (function(){
+      const root = document.querySelector('[data-carousel="markets"]');
+      if (!root) return;
+
+      const viewport = root.querySelector('.viewport');
+      const track = root.querySelector('.track');
+      const cards = Array.from(track.children);
+      const btnPrev = root.querySelector('.navbtn.prev');
+      const btnNext = root.querySelector('.navbtn.next');
+
+      const GAP = 12; // Debe coincidir con --gap de .track
+
+      function cardWidth(){
+        // Mide una card real (ya definida por container queries)
+        const c = cards[0];
+        const w = c ? c.getBoundingClientRect().width : viewport.getBoundingClientRect().width;
+        return w + GAP;
+      }
+
+      function updateButtons(){
+        const maxScroll = track.scrollWidth - track.clientWidth - 1; // tolerancia
+        btnPrev.disabled = (track.scrollLeft <= 0);
+        btnNext.disabled = (track.scrollLeft >= maxScroll);
+      }
+
+      function go(delta){
+        track.scrollBy({ left: delta * cardWidth(), behavior: 'smooth' });
+        setTimeout(updateButtons, 220);
+      }
+
+      btnPrev?.addEventListener('click', () => go(-1));
+      btnNext?.addEventListener('click', () => go(+1));
+      track.addEventListener('scroll', updateButtons, { passive:true });
+
+      // Init
+      function init(){ updateButtons(); }
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init);
+      } else { init(); }
+      window.addEventListener('load', init, { once:true });
+      window.addEventListener('resize', () => setTimeout(init, 60), { passive:true });
+    })();
+  </script>
+</body>
+</html>
