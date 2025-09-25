@@ -9,7 +9,10 @@ from news import fetch_news
 from calendar_sync import get_events_today_from_ics, find_free_slots_from_events
 from finance import fetch_prices, basic_stats, plot_prices
 from report import save_report
-from email_send import send_email  # nuevo
+from email_send import send_email
+
+# 👇 NUEVO: digest del agente para el cuerpo del email
+from agent import generate_digest_html
 
 load_dotenv()
 
@@ -42,17 +45,20 @@ def main() -> None:
     )
     print(f"Reporte generado: {out_path}")
 
-    # 5) Envío por email (link-only, subject con fecha)
+    # 5) Envío por email (link-only) + digest del agente en el cuerpo
     if SEND_CHANNEL == "email":
         try:
             today_str = datetime.now().strftime("%Y-%m-%d")
             subject = f"Daily Report {today_str}"
 
-            # Como es link-only, no pasamos attachments
+            digest_html = generate_digest_html(news_items, stats, k=5)
+
+            # Link-only, sin adjuntos; metemos digest como body_html
             send_email(
                 subject=subject,
                 html_path=out_path,
                 attachments=[],
+                body_html=digest_html,
             )
         except Exception as e:
             print(f"[email] Error enviando correo: {e}")
