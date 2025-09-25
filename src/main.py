@@ -9,9 +9,7 @@ from news import fetch_news
 from calendar_sync import get_events_today_from_ics, find_free_slots_from_events
 from finance import fetch_prices, basic_stats, plot_prices
 from report import save_report
-
-# nuevo: email
-from email_send import send_email  
+from email_send import send_email  # nuevo
 
 load_dotenv()
 
@@ -28,9 +26,9 @@ def main() -> None:
     free_slots = find_free_slots_from_events(events)
 
     # 3) Mercados: precios, estadísticas y gráficas
-    prices = fetch_prices()                      # Dict[str, pd.DataFrame]
-    stats = basic_stats(prices)                  # Dict[str, Dict[str, float]]
-    chart_paths = plot_prices(prices) or []      # List[str] con rutas de imágenes
+    prices = fetch_prices()
+    stats = basic_stats(prices)
+    chart_paths = plot_prices(prices) or []
 
     # 4) Reporte HTML estilizado
     out_path = save_report(
@@ -44,28 +42,20 @@ def main() -> None:
     )
     print(f"Reporte generado: {out_path}")
 
-    # 5) Envío por email (si está habilitado)
-
+    # 5) Envío por email (link-only, subject con fecha)
     if SEND_CHANNEL == "email":
         try:
-            from datetime import datetime
-            now = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M")
+            today_str = datetime.now().strftime("%Y-%m-%d")
+            subject = f"Daily Report {today_str}"
 
-            # Make chart paths absolute (they are relative to the report's directory)
-            report_dir = os.path.dirname(out_path)
-            abs_attachments = [
-                (p if os.path.isabs(p) else os.path.join(report_dir, p))
-                for p in (chart_paths or [])
-            ]
-
+            # Como es link-only, no pasamos attachments
             send_email(
-                subject=f"Daily Study & News — {now}",
-                html_path=out_path,             # email_send will also attach this automatically
-                attachments=abs_attachments,    # now real filepaths
+                subject=subject,
+                html_path=out_path,
+                attachments=[],
             )
         except Exception as e:
             print(f"[email] Error enviando correo: {e}")
-
 
 
 if __name__ == "__main__":
